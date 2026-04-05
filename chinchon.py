@@ -1,12 +1,10 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-#  🃏  Chinchón — Spanish Card Game  (BAT 3301 · Colazo)
+#  🃏  Chinchón — Spanish Card Game  (c) Dr. Jorge Colazo
 #  Player vs Computer · Baraja Española · 40 cards
 # ═══════════════════════════════════════════════════════════════════════════════
 
 import streamlit as st
-import streamlit.components.v1 as components
 import random
-import json
 from itertools import combinations
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -87,16 +85,6 @@ hr.felt { border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 10p
 
 /* Menu centering */
 .menu-wrap { text-align: center; padding: 30px 0 20px; }
-
-/* Hide relay input visually (still present in DOM for JS access) */
-input[placeholder="__chinchon_relay__"] {
-    position: absolute !important; width: 1px !important; height: 1px !important;
-    top: -9999px !important; left: -9999px !important; opacity: 0 !important;
-}
-div[data-testid="stTextInput"]:has(input[placeholder="__chinchon_relay__"]) {
-    position: absolute !important; width: 1px !important; height: 1px !important;
-    top: -9999px !important; overflow: hidden !important;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -112,7 +100,7 @@ SUIT_LIGHT = {'Oros': '#fef3c7', 'Copas': '#fee2e2', 'Espadas': '#dbeafe', 'Bast
 
 def vlabel(v):
     """Display label for a card value."""
-    return {1: 'A', 10: 'S', 11: 'C', 12: 'R'}.get(v, str(v))
+    return {1: 'A'}.get(v, str(v))
 
 def vpoints(v):
     """Point value of an unmatched card."""
@@ -382,226 +370,6 @@ def hand_html_row(cards, highlights=None, win_set=None, facedown=False, gap=6):
 # ═══════════════════════════════════════════════════════════════════════════════
 #  DRAGGABLE HAND COMPONENT  (HTML5 drag-and-drop + relay communication)
 # ═══════════════════════════════════════════════════════════════════════════════
-def build_hand_component(hand_data: list, phase: str) -> str:
-    """
-    Returns a full HTML page that renders the player's hand with HTML5
-    drag-and-drop.  Communicates back to Streamlit by updating a hidden
-    relay <input> in the parent document via React's native value setter.
-
-    Messages sent to relay input:
-      order:0,2,1,...   -> reorder hand to this permutation
-      discard:3         -> player discards card at display-index 3
-    """
-    cards_json = json.dumps(hand_data)
-    n          = len(hand_data)
-    is_discard = (phase == "discard")
-    card_w     = 68
-    card_h     = 102
-
-    # ── CSS block ────────────────────────────────────────────────────────────
-    css = (
-        '* { box-sizing: border-box; margin: 0; padding: 0; }\n'
-        'body {\n'
-        '  background: transparent;\n'
-        "  font-family: 'Inter', -apple-system, sans-serif;\n"
-        '  padding: 6px 4px 4px;\n'
-        '  user-select: none;\n'
-        '}\n'
-        '.hand-row {\n'
-        '  display: flex; gap: 6px; align-items: flex-end;\n'
-        '  flex-wrap: nowrap; justify-content: center;\n'
-        '}\n'
-        '.card-slot { display: flex; flex-direction: column; align-items: center; gap: 4px; }\n'
-        f'.card {{\n'
-        f'  width: {card_w}px; height: {card_h}px;\n'
-        '  border-radius: 9px; cursor: grab;\n'
-        '  display: flex; flex-direction: column;\n'
-        '  align-items: center; justify-content: space-between;\n'
-        '  padding: 5px 4px;\n'
-        '  transition: transform 0.12s ease, box-shadow 0.12s ease;\n'
-        '  position: relative;\n'
-        '}\n'
-        '.card:hover { transform: translateY(-6px); }\n'
-        '.card.dragging { opacity: 0.35; cursor: grabbing; transform: scale(0.95); }\n'
-        '.card.drag-over { transform: translateY(-10px) scale(1.04); }\n'
-        '.card .top-val, .card .bot-val {\n'
-        '  font-size: 15px; font-weight: 800; width: 100%; line-height: 1;\n'
-        '}\n'
-        '.card .top-val { text-align: left; padding-left: 2px; }\n'
-        '.card .bot-val { text-align: right; padding-right: 2px; transform: rotate(180deg); }\n'
-        '.card .suit-icon { font-size: 34px; line-height: 1; text-align: center; }\n'
-        '.card .badge {\n'
-        '  position: absolute; top: -7px; right: -7px;\n'
-        '  width: 20px; height: 20px; border-radius: 50%;\n'
-        '  font-size: 11px; display: flex; align-items: center; justify-content: center;\n'
-        '  font-weight: 800; border: 2px solid white;\n'
-        '}\n'
-        '.badge-new  { background: #3b82f6; color: white; }\n'
-        '.badge-cc   { background: #fbbf24; color: #1c1917; }\n'
-        '.badge-win  { background: #22c55e; color: white; }\n'
-        '.discard-btn {\n'
-        f'  width: {card_w}px; padding: 5px 0; border-radius: 6px; border: none;\n'
-        '  font-size: 12px; font-weight: 700; cursor: pointer; letter-spacing: 0.5px;\n'
-        '  transition: background 0.15s, transform 0.1s;\n'
-        '}\n'
-        '.discard-btn:hover { transform: scale(1.05); }\n'
-        '.discard-btn.normal { background: rgba(0,0,0,0.35); color: rgba(255,255,255,0.7); }\n'
-        '.discard-btn.normal:hover { background: rgba(0,0,0,0.55); }\n'
-        '.discard-btn.stop { background: #16a34a; color: white; }\n'
-        '.discard-btn.chinchon { background: #f59e0b; color: #1c1917; }\n'
-        '.drag-hint {\n'
-        '  text-align: center; font-size: 10px; color: rgba(255,255,255,0.3);\n'
-        '  letter-spacing: 1px; text-transform: uppercase; margin-top: 6px;\n'
-        '}\n'
-    )
-
-    # ── JavaScript block ─────────────────────────────────────────────────────
-    js = (
-        'const CARDS = ' + cards_json + ';\n'
-        'const PHASE = ' + json.dumps(phase) + ';\n'
-        'const IS_DISCARD = ' + ('true' if is_discard else 'false') + ';\n'
-        '\n'
-        'let dragSrcIdx = null;\n'
-        'let order = CARDS.map((_, i) => i);\n'
-        '\n'
-        '// Relay communication to parent Streamlit app\n'
-        'function sendRelay(msg) {\n'
-        '  try {\n'
-        '    const inputs = window.parent.document.querySelectorAll("input");\n'
-        '    let relay = null;\n'
-        '    for (const inp of inputs) {\n'
-        '      if (inp.placeholder === "__chinchon_relay__") { relay = inp; break; }\n'
-        '    }\n'
-        '    if (!relay) return;\n'
-        '    const setter = Object.getOwnPropertyDescriptor(\n'
-        '      window.parent.HTMLInputElement.prototype, "value"\n'
-        '    ).set;\n'
-        '    setter.call(relay, msg);\n'
-        '    relay.dispatchEvent(new Event("input", { bubbles: true }));\n'
-        '  } catch(e) {}\n'
-        '}\n'
-        '\n'
-        'function renderCard(ci, displayIdx) {\n'
-        '  const c = CARDS[ci];\n'
-        '  let border = "2px solid " + c.color + "70";\n'
-        '  let shadow = "2px 4px 8px rgba(0,0,0,0.25)";\n'
-        '  let badge  = "";\n'
-        '  if (c.is_new) {\n'
-        '    border = "3px solid #ffffff";\n'
-        '    shadow = "0 0 14px rgba(255,255,255,0.55),2px 4px 8px rgba(0,0,0,0.3)";\n'
-        '    badge  = \'<div class="badge badge-new">&#9733;</div>\';\n'
-        '  }\n'
-        '  if (c.is_cc) {\n'
-        '    border = "3px solid #fbbf24";\n'
-        '    shadow = "0 0 18px #fbbf2488,2px 4px 8px rgba(0,0,0,0.3)";\n'
-        '    badge  = \'<div class="badge badge-cc">&#127885;</div>\';\n'
-        '  } else if (c.is_win) {\n'
-        '    border = "3px solid #22c55e";\n'
-        '    shadow = "0 0 12px #22c55e66,2px 4px 8px rgba(0,0,0,0.3)";\n'
-        '    badge  = \'<div class="badge badge-win">&#9995;</div>\';\n'
-        '  }\n'
-        '\n'
-        '  let btnHtml = "";\n'
-        '  if (IS_DISCARD) {\n'
-        '    let cls = "normal", lbl = "&#8595; discard";\n'
-        '    if (c.is_cc)       { cls = "chinchon"; lbl = "&#127885; Chinch\\u00f3n!"; }\n'
-        '    else if (c.is_win) { cls = "stop";    lbl = "&#9995; Stop!"; }\n'
-        '    btnHtml = \'<button class="discard-btn \' + cls + \'" onclick="discard(\' + displayIdx + \')">\'\n'
-        '             + lbl + "</button>";\n'
-        '  }\n'
-        '\n'
-        '  return \'<div class="card-slot" data-idx="\' + displayIdx + \'">\'\n'
-        '       + \'<div class="card" id="card-\' + displayIdx + \'"\'\n'
-        '       + \' draggable="true" data-idx="\' + displayIdx + \'"\'\n'
-        '       + \' style="background:\' + c.bg + \';border:\' + border + \';box-shadow:\' + shadow + \';"\'\n'
-        '       + \' ondragstart="onDragStart(event,\' + displayIdx + \')"\'\n'
-        '       + \' ondragover="onDragOver(event)"\'\n'
-        '       + \' ondrop="onDrop(event,\' + displayIdx + \')"\'\n'
-        '       + \' ondragend="onDragEnd(event)"\'\n'
-        '       + \' ondragenter="onDragEnter(event)"\'\n'
-        '       + \' ondragleave="onDragLeave(event)">\'\n'
-        '       + badge\n'
-        '       + \'<div class="top-val" style="color:\' + c.color + \';">\' + c.label + "</div>"\n'
-        '       + \'<div class="suit-icon">\' + c.emoji + "</div>"\n'
-        '       + \'<div class="bot-val" style="color:\' + c.color + \';">\' + c.label + "</div>"\n'
-        '       + "</div>"\n'
-        '       + btnHtml\n'
-        '       + "</div>";\n'
-        '}\n'
-        '\n'
-        'function render() {\n'
-        '  const row = document.getElementById("handRow");\n'
-        '  row.innerHTML = order.map((ci, di) => renderCard(ci, di)).join("");\n'
-        '}\n'
-        '\n'
-        'function onDragStart(e, idx) {\n'
-        '  dragSrcIdx = idx;\n'
-        '  e.dataTransfer.effectAllowed = "move";\n'
-        '  setTimeout(function() {\n'
-        '    const el = document.getElementById("card-" + idx);\n'
-        '    if (el) el.classList.add("dragging");\n'
-        '  }, 0);\n'
-        '}\n'
-        '\n'
-        'function onDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }\n'
-        '\n'
-        'function onDragEnter(e) {\n'
-        '  const card = e.currentTarget.closest ? e.currentTarget : e.target;\n'
-        '  if (card && parseInt(card.dataset.idx) !== dragSrcIdx)\n'
-        '    card.classList.add("drag-over");\n'
-        '}\n'
-        '\n'
-        'function onDragLeave(e) {\n'
-        '  if (e.currentTarget.classList)\n'
-        '    e.currentTarget.classList.remove("drag-over");\n'
-        '}\n'
-        '\n'
-        'function onDrop(e, destIdx) {\n'
-        '  e.preventDefault();\n'
-        '  if (dragSrcIdx === null || dragSrcIdx === destIdx) return;\n'
-        '  const newOrder = order.slice();\n'
-        '  const tmp = newOrder[dragSrcIdx];\n'
-        '  newOrder[dragSrcIdx] = newOrder[destIdx];\n'
-        '  newOrder[destIdx] = tmp;\n'
-        '  order = newOrder;\n'
-        '  render();\n'
-        '  sendRelay("order:" + order.join(","));\n'
-        '}\n'
-        '\n'
-        'function onDragEnd(e) {\n'
-        '  dragSrcIdx = null;\n'
-        '  document.querySelectorAll(".card").forEach(function(el) {\n'
-        '    el.classList.remove("dragging");\n'
-        '    el.classList.remove("drag-over");\n'
-        '  });\n'
-        '}\n'
-        '\n'
-        'function discard(displayIdx) { sendRelay("discard:" + displayIdx); }\n'
-        '\n'
-        'render();\n'
-    )
-
-    html = (
-        '<!DOCTYPE html><html><head>'
-        '<meta charset="UTF-8">'
-        '<style>'
-        + css +
-        '</style></head><body>'
-        '<div class="hand-row" id="handRow"></div>'
-        '<div class="drag-hint">&#8596; drag cards to reorder</div>'
-        '<script>'
-        + js +
-        '</script></body></html>'
-    )
-    return html
-
-
-
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-#  SESSION STATE
-# ═══════════════════════════════════════════════════════════════════════════════
 def init_game(reset_scores=False):
     ss = st.session_state
     deck = make_deck()
@@ -744,116 +512,62 @@ if ss.phase == 'menu':
 # ═══════════════════════════════════════════════════════════════════════════════
 elif ss.phase in ('draw', 'discard', 'game_over'):
 
-    # ── Relay: receive messages from the draggable card component ─────────────
-    relay_val = st.text_input(
-        "Relay", value="", key="_relay_input",
-        placeholder="__chinchon_relay__",
-        label_visibility="hidden",
-    )
-
-    if relay_val and ss.phase in ('draw', 'discard'):
-        if relay_val.startswith('order:') and ss.phase == 'draw':
-            # Reorder in draw phase (7 cards, no discard yet)
-            try:
-                new_idx = [int(x) for x in relay_val[6:].split(',')]
-                if (len(new_idx) == len(ss.player_hand)
-                        and sorted(new_idx) == list(range(len(ss.player_hand)))):
-                    ss.player_hand = [ss.player_hand[i] for i in new_idx]
-                    # drawn_idx is None in draw phase
-            except Exception:
-                pass
-            st.session_state._relay_input = ""
-            st.rerun()
-
-        elif relay_val.startswith('order:') and ss.phase == 'discard':
-            # Reorder in discard phase (8 cards); fix drawn_idx and win_idx_list
-            try:
-                new_idx = [int(x) for x in relay_val[6:].split(',')]
-                if (len(new_idx) == len(ss.player_hand)
-                        and sorted(new_idx) == list(range(len(ss.player_hand)))):
-                    # Track drawn card by id before reorder
-                    drawn_id = (ss.player_hand[ss.drawn_idx]['id']
-                                if ss.drawn_idx is not None else None)
-                    ss.player_hand = [ss.player_hand[i] for i in new_idx]
-                    # Fix drawn_idx for new order
-                    if drawn_id is not None:
-                        ss.drawn_idx = next(
-                            (j for j, c in enumerate(ss.player_hand)
-                             if c['id'] == drawn_id), None)
-                    # Recompute win list for new order
-                    ss.win_idx_list = winning_discards(ss.player_hand)
-            except Exception:
-                pass
-            st.session_state._relay_input = ""
-            st.rerun()
-
-        elif relay_val.startswith('discard:') and ss.phase == 'discard':
-            try:
-                discard_display_idx = int(relay_val[8:])
-            except Exception:
-                discard_display_idx = -1
-            st.session_state._relay_input = ""
-            if 0 <= discard_display_idx < len(ss.player_hand):
-                # ── Trigger discard via session state flag ─────────────────
-                ss._pending_discard = discard_display_idx
-            st.rerun()
-
-    # ── Process pending discard (set by relay) ────────────────────────────────
-    if getattr(ss, '_pending_discard', None) is not None:
-        _di = ss._pending_discard
-        ss._pending_discard = None
-        n_cards_pd  = len(ss.player_hand)
-        if 0 <= _di < n_cards_pd and ss.phase == 'discard':
-            discarded_card = ss.player_hand[_di]
-            remaining      = [ss.player_hand[j] for j in range(n_cards_pd) if j != _di]
-            ss.discard_pile.append(discarded_card)
-            can, is_cc_result, melds = find_win(remaining)
-            if can:
-                ss.player_hand  = remaining; ss.melds = melds
-                ss.phase        = 'game_over'; ss.computer_msg = ""
-                ss.hand_penalty_player = 0; ss.hand_unmatched_player = []
-                if is_cc_result:
-                    ss.game_result             = 'player_cc'
-                    ss.hand_penalty_computer   = None
-                    ss.hand_unmatched_computer = []
-                    ss.message = "🏅 ¡CHINCHÓN! You win the entire game!"
-                else:
-                    pen, unmatched          = deadwood(ss.computer_hand)
-                    ss.computer_score      += pen
-                    ss.hand_penalty_computer   = pen
-                    ss.hand_unmatched_computer = unmatched
-                    ss.game_result   = 'player_wins'
-                    ss.message = (f"✋ You stopped! Computer pays "
-                                  f"{pen} penalty points.")
+    # ── Player discard action ────────────────────────────────────────────────────
+    def do_discard(idx: int):
+        """Execute a player discard: update state, run computer turn, rerun."""
+        n_h = len(ss.player_hand)
+        if not (0 <= idx < n_h) or ss.phase != 'discard':
+            return
+        discarded_card = ss.player_hand[idx]
+        remaining      = [ss.player_hand[j] for j in range(n_h) if j != idx]
+        ss.discard_pile.append(discarded_card)
+        can, is_cc_result, melds = find_win(remaining)
+        if can:
+            ss.player_hand = remaining; ss.melds = melds
+            ss.phase = 'game_over'; ss.computer_msg = ""
+            ss.hand_penalty_player = 0; ss.hand_unmatched_player = []
+            if is_cc_result:
+                ss.game_result             = 'player_cc'
+                ss.hand_penalty_computer   = None
+                ss.hand_unmatched_computer = []
+                ss.message = "\U0001f3c5 \u00a1CHINCH\u00d3N! You win the entire game!"
             else:
-                ss.player_hand = remaining; ss.phase = 'draw'
-                ss.drawn_idx = None; ss.win_idx_list = []
-                new_ch, disc_c, src, comp_can, comp_cc = computer_play(
-                    ss.computer_hand, ss.discard_pile, ss.deck)
-                if disc_c is not None: ss.discard_pile.append(disc_c)
-                ss.computer_hand = new_ch
-                src_txt  = "the discard pile" if src == 'discard' else "the deck"
-                disc_txt = cstr(disc_c) if disc_c else "?"
-                ss.computer_msg = (f"🤖 Computer drew from {src_txt} · discarded {disc_txt}")
-                if comp_can:
-                    ss.phase = 'game_over'
-                    ss.hand_penalty_computer = 0; ss.hand_unmatched_computer = []
-                    if comp_cc:
-                        ss.game_result = 'comp_cc'
-                        ss.hand_penalty_player = None; ss.hand_unmatched_player = []
-                        ss.computer_msg += " · 🏅 COMPUTER CHINCHÓN!"
-                        ss.message = "💀 Computer got Chinchón and wins the game!"
-                    else:
-                        pen, unmatched       = deadwood(ss.player_hand)
-                        ss.player_score     += pen
-                        ss.hand_penalty_player   = pen
-                        ss.hand_unmatched_player = unmatched
-                        ss.game_result    = 'comp_wins'
-                        ss.computer_msg  += " · ✋ Computer stops!"
-                        ss.message = (f"😔 Computer stopped. You pay {pen} penalty points.")
+                pen, unmatched         = deadwood(ss.computer_hand)
+                ss.computer_score     += pen
+                ss.hand_penalty_computer   = pen
+                ss.hand_unmatched_computer = unmatched
+                ss.game_result   = 'player_wins'
+                ss.message = f"\u270b You stopped! Computer pays {pen} penalty points."
+        else:
+            ss.player_hand  = remaining; ss.phase = 'draw'
+            ss.drawn_idx    = None; ss.win_idx_list = []
+            new_ch, disc_c, src, comp_can, comp_cc = computer_play(
+                ss.computer_hand, ss.discard_pile, ss.deck)
+            if disc_c is not None:
+                ss.discard_pile.append(disc_c)
+            ss.computer_hand = new_ch
+            src_txt  = "the discard pile" if src == 'discard' else "the deck"
+            disc_txt = cstr(disc_c) if disc_c else "?"
+            ss.computer_msg = f"\U0001f916 Computer drew from {src_txt} \u00b7 discarded {disc_txt}"
+            if comp_can:
+                ss.phase = 'game_over'
+                ss.hand_penalty_computer = 0; ss.hand_unmatched_computer = []
+                if comp_cc:
+                    ss.game_result = 'comp_cc'
+                    ss.hand_penalty_player = None; ss.hand_unmatched_player = []
+                    ss.computer_msg += " \u00b7 \U0001f3c5 COMPUTER CHINCH\u00d3N!"
+                    ss.message = "\U0001f480 Computer got Chinch\u00f3n and wins the game!"
                 else:
-                    ss.message = "Your turn — draw a card."
-            st.rerun()
+                    pen, unmatched       = deadwood(ss.player_hand)
+                    ss.player_score     += pen
+                    ss.hand_penalty_player   = pen
+                    ss.hand_unmatched_player = unmatched
+                    ss.game_result    = 'comp_wins'
+                    ss.computer_msg  += " \u00b7 \u270b Computer stops!"
+                    ss.message = f"\U0001f614 Computer stopped. You pay {pen} penalty points."
+            else:
+                ss.message = "Your turn \u2014 draw a card."
+        st.rerun()
 
     # ── Computer hand ─────────────────────────────────────────────────────────
     st.markdown('<div class="sec-lbl">🤖 Computer\'s hand</div>', unsafe_allow_html=True)
@@ -942,7 +656,7 @@ elif ss.phase in ('draw', 'discard', 'game_over'):
 
     # ── Player hand ───────────────────────────────────────────────────────────
     st.markdown('<div class="sec-lbl">🧑 Your hand &nbsp;·&nbsp; '
-                '<span style="font-size:10px;opacity:0.5;">drag cards to reorder</span>'
+                '<span style="font-size:10px;opacity:0.5;">← → to reorder</span>'
                 '</div>', unsafe_allow_html=True)
 
     if ss.message:
@@ -955,51 +669,81 @@ elif ss.phase in ('draw', 'discard', 'game_over'):
         st.markdown(f'<div class="msg {msg_cls}">{ss.message}</div>',
                     unsafe_allow_html=True)
 
-    win_set = {i for i, _ in ss.win_idx_list}
-    win_cc  = {i for i, cc in ss.win_idx_list if cc}
+    n_cards  = len(ss.player_hand)
+    win_set  = {i for i, _ in ss.win_idx_list}
+    win_cc   = {i for i, cc in ss.win_idx_list if cc}
 
-    # ── Build hand data for the JS component ──────────────────────────────────
-    hand_data = [
-        {
-            "id":     c['id'],
-            "v":      c['v'],
-            "s":      c['s'],
-            "label":  vlabel(c['v']),
-            "emoji":  SUIT_EMOJI[c['s']],
-            "color":  SUIT_COLOR[c['s']],
-            "bg":     SUIT_LIGHT[c['s']],
-            "is_new": (i == ss.drawn_idx) and ss.phase == 'discard',
-            "is_cc":  (i in win_cc)        and ss.phase == 'discard',
-            "is_win": (i in win_set)        and ss.phase == 'discard',
-        }
-        for i, c in enumerate(ss.player_hand)
-    ]
+    # ── Meld highlight for game-over ──────────────────────────────────────────
+    meld_ids = set()
+    if ss.phase == 'game_over' and ss.game_result in ('player_wins','player_cc') and ss.melds:
+        for meld in ss.melds:
+            meld_ids.update(c['id'] for c in meld)
 
-    if ss.phase == 'game_over':
-        # Static display only — no drag, no discard buttons
-        # Highlight meld cards in gold if player won
-        meld_ids = set()
-        if ss.game_result in ('player_wins', 'player_cc') and ss.melds:
-            for meld in ss.melds:
-                meld_ids.update(c['id'] for c in meld)
-        for d in hand_data:
-            d['is_win']  = d['id'] in meld_ids
-            d['is_new']  = False
-            d['is_cc']   = False
-        st.markdown(
-            hand_html_row(ss.player_hand,
-                          win_set={i for i, d in enumerate(hand_data) if d['is_win']}),
-            unsafe_allow_html=True,
-        )
-    else:
-        # Live interactive component with drag-and-drop + discard buttons
-        n_cards   = len(ss.player_hand)
-        card_h_px = 115 if ss.phase == 'discard' else 130
-        components.html(
-            build_hand_component(hand_data, ss.phase),
-            height=card_h_px + (36 if ss.phase == 'discard' else 0) + 30,
-            scrolling=False,
-        )
+    # ── Card images ────────────────────────────────────────────────────────────
+    card_cols = st.columns(n_cards)
+    for i, card in enumerate(ss.player_hand):
+        with card_cols[i]:
+            is_new  = (i == ss.drawn_idx) and ss.phase == 'discard'
+            is_win  = (i in win_set) and ss.phase == 'discard'
+            is_meld = card['id'] in meld_ids
+            st.markdown(
+                card_html(card, new=is_new, win=(is_win or is_meld)),
+                unsafe_allow_html=True,
+            )
+
+    # ── Reorder row (← →) ─────────────────────────────────────────────────────
+    if ss.phase in ('draw', 'discard'):
+        swap_cols = st.columns(n_cards)
+        for i in range(n_cards):
+            with swap_cols[i]:
+                btn_row = st.columns(2)
+                # ← move left
+                with btn_row[0]:
+                    if i > 0:
+                        if st.button("\u2190", key=f"ml_{i}_{ss.player_hand[i]['id']}",
+                                     use_container_width=True, help="Move left"):
+                            drawn_id = (ss.player_hand[ss.drawn_idx]['id']
+                                        if ss.drawn_idx is not None else None)
+                            ss.player_hand[i], ss.player_hand[i-1] = (
+                                ss.player_hand[i-1], ss.player_hand[i])
+                            if drawn_id is not None:
+                                ss.drawn_idx = next(
+                                    (j for j, c in enumerate(ss.player_hand)
+                                     if c['id'] == drawn_id), None)
+                            if ss.phase == 'discard':
+                                ss.win_idx_list = winning_discards(ss.player_hand)
+                            st.rerun()
+                # → move right
+                with btn_row[1]:
+                    if i < n_cards - 1:
+                        if st.button("\u2192", key=f"mr_{i}_{ss.player_hand[i]['id']}",
+                                     use_container_width=True, help="Move right"):
+                            drawn_id = (ss.player_hand[ss.drawn_idx]['id']
+                                        if ss.drawn_idx is not None else None)
+                            ss.player_hand[i], ss.player_hand[i+1] = (
+                                ss.player_hand[i+1], ss.player_hand[i])
+                            if drawn_id is not None:
+                                ss.drawn_idx = next(
+                                    (j for j, c in enumerate(ss.player_hand)
+                                     if c['id'] == drawn_id), None)
+                            if ss.phase == 'discard':
+                                ss.win_idx_list = winning_discards(ss.player_hand)
+                            st.rerun()
+
+    # ── Discard buttons ────────────────────────────────────────────────────────
+    if ss.phase == 'discard':
+        disc_cols = st.columns(n_cards)
+        for i, card in enumerate(ss.player_hand):
+            with disc_cols[i]:
+                if i in win_cc:
+                    lbl = "\U0001f3c5 CC!"
+                elif i in win_set:
+                    lbl = "\u270b Stop!"
+                else:
+                    lbl = "\u2193 discard"
+                if st.button(lbl, key=f"d_{i}_{card['id']}",
+                             use_container_width=True):
+                    do_discard(i)
 
     # ── Game-over reveal ──────────────────────────────────────────────────────
     if ss.phase == 'game_over':
