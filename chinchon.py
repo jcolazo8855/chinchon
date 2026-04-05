@@ -889,11 +889,11 @@ elif ss.phase in ('draw', 'discard', 'game_over'):
     card_cols = st.columns(n_cards)
     for i, card in enumerate(ss.player_hand):
         with card_cols[i]:
-            is_new  = (i == ss.drawn_idx) and ss.phase == 'discard'
-            is_win  = (i in win_set) and ss.phase == 'discard'
-            is_meld = card['id'] in meld_ids
+            is_new      = (i == ss.drawn_idx) and ss.phase == 'discard'
+            is_win      = (i in win_set) and ss.phase == 'discard'
+            in_meld_set = card['id'] in meld_ids
             st.markdown(
-                card_html(card, new=is_new, win=(is_win or is_meld)),
+                card_html(card, new=is_new, win=(is_win or in_meld_set)),
                 unsafe_allow_html=True,
             )
 
