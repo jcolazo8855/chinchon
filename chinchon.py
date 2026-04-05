@@ -5,6 +5,7 @@
 
 import streamlit as st
 import random
+import math
 from itertools import combinations
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -314,46 +315,162 @@ def computer_play(hand, discard_pile, deck):
     return new_hand, discarded, source, can, cc
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  CARD HTML
+#  CARD SVG  (Fournier-inspired design)
 # ═══════════════════════════════════════════════════════════════════════════════
+_CW, _CH = 72, 108   # card pixel dimensions
+
+# Suit symbol positions (x, y) and sizes for values 1-7
+_POS = {
+    1: [(36, 54)],
+    2: [(36, 30), (36, 78)],
+    3: [(36, 24), (36, 54), (36, 84)],
+    4: [(22, 32), (50, 32), (22, 76), (50, 76)],
+    5: [(22, 24), (50, 24), (36, 54), (22, 84), (50, 84)],
+    6: [(22, 24), (50, 24), (22, 54), (50, 54), (22, 84), (50, 84)],
+    7: [(22, 20), (50, 20), (36, 38), (22, 54), (50, 54), (22, 76), (50, 76)],
+}
+_SZ = {1: 15, 2: 13, 3: 12, 4: 10, 5: 9, 6: 9, 7: 8}
+
+_TEXT_COL = {
+    'Oros':    '#8A6010',
+    'Espadas': '#1A3A80',
+    'Copas':   '#8A0000',
+    'Bastos':  '#1E5A0E',
+}
+
+
+def _sym(suit, cx, cy, sz):
+    """SVG markup for one suit symbol centred at (cx, cy) with half-size sz."""
+    cx, cy = round(cx, 1), round(cy, 1)
+    if suit == 'Oros':
+        sw = max(1.1, sz * 0.12)
+        return (
+            f'<circle cx="{cx}" cy="{cy}" r="{sz:.1f}" fill="#F6C820" stroke="#A07818" stroke-width="{sw:.1f}"/>' 
+            f'<circle cx="{cx}" cy="{cy}" r="{sz*0.62:.1f}" fill="none" stroke="#A07818" stroke-width="{sw*0.55:.1f}"/>' 
+            f'<circle cx="{cx}" cy="{cy}" r="{sz*0.26:.1f}" fill="#A07818"/>' 
+        )
+    elif suit == 'Espadas':
+        bw = max(1.4, sz * 0.17)
+        gw = sz * 0.72
+        return (
+            f'<polygon points="{cx},{cy-sz:.1f} {cx-bw:.1f},{cy-sz*0.28:.1f} {cx+bw:.1f},{cy-sz*0.28:.1f}" fill="#4068B8"/>' 
+            f'<rect x="{cx-bw:.1f}" y="{cy-sz*0.28:.1f}" width="{bw*2:.1f}" height="{sz*0.54:.1f}" fill="#4068B8"/>' 
+            f'<rect x="{cx-gw:.1f}" y="{cy+sz*0.24:.1f}" width="{gw*2:.1f}" height="{sz*0.17:.1f}" fill="#9B6E22" rx="2"/>' 
+            f'<rect x="{cx-bw*1.6:.1f}" y="{cy+sz*0.41:.1f}" width="{bw*3.2:.1f}" height="{sz*0.59:.1f}" fill="#7A4C18" rx="2"/>' 
+        )
+    elif suit == 'Copas':
+        bw = sz * 0.86; bh = sz * 0.70
+        y0 = cy - sz; ym = y0 + bh
+        sw2 = sz * 0.15; sh = sz * 0.42; baw = sz * 0.58
+        return (
+            f'<path d="M{cx-bw:.1f},{y0:.1f} Q{cx-bw:.1f},{ym:.1f} {cx:.1f},{ym:.1f} Q{cx+bw:.1f},{ym:.1f} {cx+bw:.1f},{y0:.1f} Z" fill="#CC1800" stroke="#880000" stroke-width="0.9"/>' 
+            f'<rect x="{cx-sw2:.1f}" y="{ym:.1f}" width="{sw2*2:.1f}" height="{sh:.1f}" fill="#AA1400"/>' 
+            f'<ellipse cx="{cx:.1f}" cy="{ym+sh:.1f}" rx="{baw:.1f}" ry="{sz*0.17:.1f}" fill="#880000"/>' 
+        )
+    else:  # Bastos
+        ang = 20 * 3.14159 / 180
+        rx_ = max(3.5, sz * 0.30)
+        kr  = max(4.0, sz * 0.40)
+        tx  = cx - math.sin(ang) * sz; ty = cy - math.cos(ang) * sz
+        bx  = cx + math.sin(ang) * sz; by_ = cy + math.cos(ang) * sz
+        return (
+            f'<ellipse cx="{cx:.1f}" cy="{cy:.1f}" rx="{rx_:.1f}" ry="{sz:.1f}" fill="#589030" stroke="#286010" stroke-width="0.8" transform="rotate(20,{cx:.1f},{cy:.1f})"/>' 
+            f'<circle cx="{tx:.1f}" cy="{ty:.1f}" r="{kr:.1f}" fill="#487820"/>' 
+            f'<circle cx="{bx:.1f}" cy="{by_:.1f}" r="{kr:.1f}" fill="#487820"/>' 
+        )
+
+
+def _face_body(suit, v):
+    """SVG body elements for face cards (v=10 Sota, 11 Caballo, 12 Rey)."""
+    cx, cy = _CW // 2, _CH // 2
+    band = {'Oros':'#C89010','Espadas':'#2050A0','Copas':'#AA1400','Bastos':'#2E6818'}[suit]
+
+    # Coloured bands top and bottom
+    out = (
+        f'<rect x="0" y="0" width="{_CW}" height="28" fill="{band}" opacity="0.35" rx="5"/>' 
+        f'<rect x="0" y="{_CH-28}" width="{_CW}" height="28" fill="{band}" opacity="0.35"/>' 
+    )
+
+    if v == 10:   # Sota — standing page
+        out += (
+            f'<circle cx="{cx}" cy="{cy-24}" r="10" fill="#FDBF78" stroke="#8B5A28" stroke-width="1"/>' 
+            f'<rect x="{cx-11}" y="{cy-14}" width="22" height="30" rx="4" fill="{band}"/>' 
+            f'<rect x="{cx-8}" y="{cy+16}" width="7" height="18" rx="3" fill="{band}"/>' 
+            f'<rect x="{cx+1}" y="{cy+16}" width="7" height="18" rx="3" fill="{band}"/>' 
+            f'<rect x="{cx-18}" y="{cy-11}" width="8" height="14" rx="3" fill="{band}"/>' 
+            f'<rect x="{cx+10}" y="{cy-11}" width="8" height="14" rx="3" fill="{band}"/>' 
+        )
+    elif v == 11:  # Caballo — knight on horse
+        out += (
+            f'<ellipse cx="{cx}" cy="{cy+16}" rx="19" ry="10" fill="#D0A070"/>' 
+            f'<circle cx="{cx+16}" cy="{cy+6}" r="7" fill="#D0A070"/>' 
+            f'<rect x="{cx-15}" y="{cy+24}" width="5" height="14" rx="2" fill="#B08050"/>' 
+            f'<rect x="{cx-6}" y="{cy+24}" width="5" height="14" rx="2" fill="#B08050"/>' 
+            f'<rect x="{cx+4}" y="{cy+24}" width="5" height="14" rx="2" fill="#B08050"/>' 
+            f'<rect x="{cx+12}" y="{cy+24}" width="5" height="14" rx="2" fill="#B08050"/>' 
+            f'<circle cx="{cx-2}" cy="{cy-16}" r="9" fill="#FDBF78" stroke="#8B5A28" stroke-width="1"/>' 
+            f'<rect x="{cx-10}" y="{cy-7}" width="19" height="22" rx="3" fill="{band}"/>' 
+        )
+    else:  # Rey — king
+        out += (
+            f'<circle cx="{cx}" cy="{cy-22}" r="10" fill="#FDBF78" stroke="#8B5A28" stroke-width="1"/>' 
+            f'<polygon points="{cx-10},{cy-31} {cx-10},{cy-40} {cx-4},{cy-33} {cx},{cy-42} {cx+4},{cy-33} {cx+10},{cy-40} {cx+10},{cy-31}" fill="#F8C820" stroke="#A07010" stroke-width="1.2"/>' 
+            f'<circle cx="{cx}" cy="{cy-37}" r="3.5" fill="#CC2020"/>' 
+            f'<polygon points="{cx-15},{cy-12} {cx+15},{cy-12} {cx+19},{cy+36} {cx-19},{cy+36}" fill="{band}"/>' 
+            f'<rect x="{cx-14}" y="{cy+2}" width="28" height="6" fill="#F8C820"/>' 
+            f'<rect x="{cx-22}" y="{cy-10}" width="9" height="16" rx="3" fill="{band}"/>' 
+            f'<rect x="{cx+13}" y="{cy-10}" width="9" height="16" rx="3" fill="{band}"/>' 
+        )
+
+    # Small suit symbol watermark centre-bottom
+    out += _sym(suit, cx, cy + 30, 9)
+    return out
+
+
 _BACK = (
-    '<div style="width:64px;height:96px;display:inline-flex;align-items:center;'
-    'justify-content:center;background:linear-gradient(145deg,#1e3a8a,#3b82f6);'
-    'border-radius:9px;border:2px solid #93c5fd;'
-    'box-shadow:2px 4px 10px rgba(0,0,0,0.55);margin:2px;flex-shrink:0;">'
-    '<span style="font-size:26px;color:rgba(255,255,255,0.35);">✦</span>'
-    '</div>'
+    f'<div style="width:{_CW}px;height:{_CH}px;display:inline-flex;align-items:center;' 
+    f'justify-content:center;' 
+    f'background:linear-gradient(160deg,#1e40af 0%,#2563eb 60%,#1e3a8a 100%);' 
+    f'border-radius:7px;border:2px solid #60a5fa;' 
+    f'box-shadow:2px 5px 10px rgba(0,0,0,0.5);margin:2px;flex-shrink:0;">' 
+    f'<span style="font-size:30px;color:rgba(255,255,255,0.22);">✦</span>' 
+    f'</div>'
 )
+
 
 def card_html(card, new=False, win=False, facedown=False):
     if facedown or card is None:
         return _BACK
-    col = SUIT_COLOR[card['s']]
-    bg  = SUIT_LIGHT[card['s']]
-    em  = SUIT_EMOJI[card['s']]
-    lb  = vlabel(card['v'])
+    v = card['v']; s = card['s']; lb = vlabel(v)
+    tcol = _TEXT_COL[s]
 
     if win:
         border = '3px solid #fbbf24'
-        shadow = '0 0 16px #fbbf2488, 2px 4px 8px rgba(0,0,0,0.3)'
+        shadow = '0 0 18px #fbbf2480, 2px 5px 10px rgba(0,0,0,0.4)'
     elif new:
-        border = '3px solid #ffffff'
-        shadow = '0 0 12px rgba(255,255,255,0.6), 2px 4px 8px rgba(0,0,0,0.3)'
+        border = '3px solid #60a5fa'
+        shadow = '0 0 14px rgba(96,165,250,0.65), 2px 5px 10px rgba(0,0,0,0.4)'
     else:
-        border = f'2px solid {col}70'
-        shadow = '2px 4px 8px rgba(0,0,0,0.25)'
+        border = '1.5px solid #b8b8b8'
+        shadow = '2px 5px 10px rgba(0,0,0,0.35)'
+
+    # Build centre SVG
+    if v in (10, 11, 12):
+        body = _face_body(s, v)
+    else:
+        body = ''.join(_sym(s, px, py, _SZ[v]) for px, py in _POS[v])
 
     return (
-        f'<div style="width:64px;height:96px;background:{bg};border:{border};'
-        f'border-radius:9px;box-shadow:{shadow};margin:2px;flex-shrink:0;'
-        f'display:flex;flex-direction:column;align-items:center;'
-        f'justify-content:space-between;padding:5px 4px;">'
-        f'<div style="font-size:14px;font-weight:800;color:{col};'
-        f'width:100%;text-align:left;padding-left:1px;line-height:1;">{lb}</div>'
-        f'<div style="font-size:30px;line-height:1;text-align:center;">{em}</div>'
-        f'<div style="font-size:14px;font-weight:800;color:{col};'
-        f'width:100%;text-align:right;padding-right:1px;line-height:1;'
-        f'transform:rotate(180deg);">{lb}</div>'
+        f'<div style="width:{_CW}px;height:{_CH}px;background:#FFFEF0;border:{border};' 
+        f'border-radius:7px;box-shadow:{shadow};margin:2px;flex-shrink:0;' 
+        f'position:relative;overflow:hidden;display:inline-block;">' 
+        f'<svg width="{_CW}" height="{_CH}" xmlns="http://www.w3.org/2000/svg" ' 
+        f'style="position:absolute;top:0;left:0;">{body}</svg>' 
+        f'<div style="position:absolute;top:3px;left:4px;font-size:13px;font-weight:900;' 
+        f'color:{tcol};line-height:1;text-shadow:0 0 4px #fff8,0 1px 2px #fff;">{lb}</div>' 
+        f'<div style="position:absolute;bottom:3px;right:4px;font-size:13px;font-weight:900;' 
+        f'color:{tcol};line-height:1;transform:rotate(180deg);' 
+        f'text-shadow:0 0 4px #fff8,0 1px 2px #fff;">{lb}</div>' 
         f'</div>'
     )
 
@@ -370,7 +487,139 @@ def hand_html_row(cards, highlights=None, win_set=None, facedown=False, gap=6):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  DRAGGABLE HAND COMPONENT  (HTML5 drag-and-drop + relay communication)
+#  GAME ACTIONS  (module-level so they are callable from the header)
+# ═══════════════════════════════════════════════════════════════════════════════
+def _run_computer_turn():
+    """Execute computer's turn and update session state. Returns nothing."""
+    ss = st.session_state
+    new_ch, disc_c, src, comp_can, comp_cc = computer_play(
+        ss.computer_hand, ss.discard_pile, ss.deck)
+    if disc_c is not None:
+        ss.discard_pile.append(disc_c)
+    ss.computer_hand = new_ch
+    src_txt  = "the discard pile" if src == 'discard' else "the deck"
+    disc_txt = cstr(disc_c) if disc_c else "?"
+    ss.computer_msg = f"\U0001f916 Computer drew from {src_txt} \u00b7 discarded {disc_txt}"
+    if comp_can:
+        ss.phase = 'game_over'
+        ss.hand_penalty_computer = 0; ss.hand_unmatched_computer = []
+        if comp_cc:
+            ss.game_result = 'comp_cc'
+            ss.hand_penalty_player = None; ss.hand_unmatched_player = []
+            ss.computer_msg += " \u00b7 \U0001f3c5 COMPUTER CHINCH\u00d3N!"
+            ss.message = "\U0001f480 Computer got Chinch\u00f3n and wins the game!"
+        else:
+            pen, unmatched       = deadwood(ss.player_hand)
+            ss.player_score     += pen
+            ss.hand_penalty_player   = pen
+            ss.hand_unmatched_player = unmatched
+            ss.game_result    = 'comp_wins'
+            ss.computer_msg  += " \u00b7 \u270b Computer stops!"
+            ss.message = f"\U0001f614 Computer stopped. You pay {pen} penalty points."
+    else:
+        ss.message = "Your turn \u2014 draw a card."
+
+
+def do_discard(idx: int):
+    """Discard player card at idx, run computer turn, update state."""
+    ss = st.session_state
+    n_h = len(ss.player_hand)
+    if not (0 <= idx < n_h):
+        return
+    discarded_card = ss.player_hand[idx]
+    remaining      = [ss.player_hand[j] for j in range(n_h) if j != idx]
+    ss.discard_pile.append(discarded_card)
+    can, is_cc_result, melds = find_win(remaining)
+    if can:
+        ss.player_hand = remaining; ss.melds = melds
+        ss.phase = 'game_over'; ss.computer_msg = ""
+        ss.hand_penalty_player = 0; ss.hand_unmatched_player = []
+        if is_cc_result:
+            ss.game_result             = 'player_cc'
+            ss.hand_penalty_computer   = None
+            ss.hand_unmatched_computer = []
+            ss.message = "\U0001f3c5 \u00a1CHINCH\u00d3N! You win the entire game!"
+        else:
+            pen, unmatched         = deadwood(ss.computer_hand)
+            ss.computer_score     += pen
+            ss.hand_penalty_computer   = pen
+            ss.hand_unmatched_computer = unmatched
+            ss.game_result   = 'player_wins'
+            ss.message = f"\u270b You stopped! Computer pays {pen} penalty points."
+    else:
+        ss.player_hand  = remaining; ss.phase = 'draw'
+        ss.drawn_idx    = None; ss.win_idx_list = []
+        _run_computer_turn()
+    st.rerun()
+
+
+def end_hand_with_scoring():
+    """
+    Player declares win — score the hand regardless of completeness.
+    In discard phase: auto-picks best discard first.
+    Complete hand → normal win.  Incomplete → both pay deadwood, hand ends.
+    """
+    ss = st.session_state
+    # Determine the 7-card hand to score
+    if ss.phase == 'discard' and len(ss.player_hand) == 8:
+        # Pick the discard that minimises deadwood (or wins outright)
+        best_i = 0; best_dw = float('inf')
+        for i in range(8):
+            rem = [ss.player_hand[j] for j in range(8) if j != i]
+            can, is_cc, _ = find_win(rem)
+            if can:
+                best_i = i
+                best_dw = -1  # flag: complete hand
+                break
+            dw, _ = deadwood(rem)
+            if dw < best_dw:
+                best_dw, best_i = dw, i
+        discard_card = ss.player_hand[best_i]
+        remaining    = [ss.player_hand[j] for j in range(8) if j != best_i]
+        ss.discard_pile.append(discard_card)
+        hand7 = remaining
+    else:
+        hand7 = list(ss.player_hand)
+
+    can, is_cc_result, melds = find_win(hand7)
+
+    if can:
+        # Normal win path
+        ss.player_hand = hand7; ss.melds = melds
+        ss.phase = 'game_over'; ss.computer_msg = ""
+        ss.hand_penalty_player = 0; ss.hand_unmatched_player = []
+        if is_cc_result:
+            ss.game_result             = 'player_cc'
+            ss.hand_penalty_computer   = None
+            ss.hand_unmatched_computer = []
+            ss.message = "\U0001f3c5 \u00a1CHINCH\u00d3N! You win the entire game!"
+        else:
+            pen, unmatched         = deadwood(ss.computer_hand)
+            ss.computer_score     += pen
+            ss.hand_penalty_computer   = pen
+            ss.hand_unmatched_computer = unmatched
+            ss.game_result   = 'player_wins'
+            ss.message = f"\u270b You stopped! Computer pays {pen} penalty points."
+    else:
+        # Incomplete hand — score both sides
+        p_pen, p_unmatched = deadwood(hand7)
+        c_pen, c_unmatched = deadwood(ss.computer_hand)
+        ss.player_score   += p_pen
+        ss.computer_score += c_pen
+        ss.player_hand = hand7; ss.melds = []
+        ss.phase = 'game_over'; ss.computer_msg = ""
+        ss.hand_penalty_player     = p_pen
+        ss.hand_unmatched_player   = p_unmatched
+        ss.hand_penalty_computer   = c_pen
+        ss.hand_unmatched_computer = c_unmatched
+        ss.game_result = 'player_declare'
+        ss.message = (f"\U0001f5d2 Declared! You pay +{p_pen} pts, "
+                      f"Computer pays +{c_pen} pts.")
+    st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  SESSION STATE
 # ═══════════════════════════════════════════════════════════════════════════════
 def init_game(reset_scores=False):
     ss = st.session_state
@@ -454,6 +703,12 @@ with h3:
                      help="Discard this game and start a new one from zero"):
             init_game(reset_scores=True)
             st.rerun()
+        if ss.phase in ('draw', 'discard'):
+            st.markdown("<div style='height:3px'></div>", unsafe_allow_html=True)
+            if st.button("✋ Declare Win", key="btn_hdr_declare",
+                         use_container_width=True, type="primary",
+                         help="Stop and score the hand now, even if not complete"):
+                end_hand_with_scoring()
 
 st.markdown("<hr class='felt'>", unsafe_allow_html=True)
 
@@ -519,63 +774,6 @@ if ss.phase == 'menu':
 #  GAME BOARD
 # ═══════════════════════════════════════════════════════════════════════════════
 elif ss.phase in ('draw', 'discard', 'game_over'):
-
-    # ── Player discard action ────────────────────────────────────────────────────
-    def do_discard(idx: int):
-        """Execute a player discard: update state, run computer turn, rerun."""
-        n_h = len(ss.player_hand)
-        if not (0 <= idx < n_h) or ss.phase != 'discard':
-            return
-        discarded_card = ss.player_hand[idx]
-        remaining      = [ss.player_hand[j] for j in range(n_h) if j != idx]
-        ss.discard_pile.append(discarded_card)
-        can, is_cc_result, melds = find_win(remaining)
-        if can:
-            ss.player_hand = remaining; ss.melds = melds
-            ss.phase = 'game_over'; ss.computer_msg = ""
-            ss.hand_penalty_player = 0; ss.hand_unmatched_player = []
-            if is_cc_result:
-                ss.game_result             = 'player_cc'
-                ss.hand_penalty_computer   = None
-                ss.hand_unmatched_computer = []
-                ss.message = "\U0001f3c5 \u00a1CHINCH\u00d3N! You win the entire game!"
-            else:
-                pen, unmatched         = deadwood(ss.computer_hand)
-                ss.computer_score     += pen
-                ss.hand_penalty_computer   = pen
-                ss.hand_unmatched_computer = unmatched
-                ss.game_result   = 'player_wins'
-                ss.message = f"\u270b You stopped! Computer pays {pen} penalty points."
-        else:
-            ss.player_hand  = remaining; ss.phase = 'draw'
-            ss.drawn_idx    = None; ss.win_idx_list = []
-            new_ch, disc_c, src, comp_can, comp_cc = computer_play(
-                ss.computer_hand, ss.discard_pile, ss.deck)
-            if disc_c is not None:
-                ss.discard_pile.append(disc_c)
-            ss.computer_hand = new_ch
-            src_txt  = "the discard pile" if src == 'discard' else "the deck"
-            disc_txt = cstr(disc_c) if disc_c else "?"
-            ss.computer_msg = f"\U0001f916 Computer drew from {src_txt} \u00b7 discarded {disc_txt}"
-            if comp_can:
-                ss.phase = 'game_over'
-                ss.hand_penalty_computer = 0; ss.hand_unmatched_computer = []
-                if comp_cc:
-                    ss.game_result = 'comp_cc'
-                    ss.hand_penalty_player = None; ss.hand_unmatched_player = []
-                    ss.computer_msg += " \u00b7 \U0001f3c5 COMPUTER CHINCH\u00d3N!"
-                    ss.message = "\U0001f480 Computer got Chinch\u00f3n and wins the game!"
-                else:
-                    pen, unmatched       = deadwood(ss.player_hand)
-                    ss.player_score     += pen
-                    ss.hand_penalty_player   = pen
-                    ss.hand_unmatched_player = unmatched
-                    ss.game_result    = 'comp_wins'
-                    ss.computer_msg  += " \u00b7 \u270b Computer stops!"
-                    ss.message = f"\U0001f614 Computer stopped. You pay {pen} penalty points."
-            else:
-                ss.message = "Your turn \u2014 draw a card."
-        st.rerun()
 
     # ── Computer hand ─────────────────────────────────────────────────────────
     st.markdown('<div class="sec-lbl">🤖 Computer\'s hand</div>', unsafe_allow_html=True)
@@ -681,23 +879,6 @@ elif ss.phase in ('draw', 'discard', 'game_over'):
     win_set  = {i for i, _ in ss.win_idx_list}
     win_cc   = {i for i, cc in ss.win_idx_list if cc}
 
-    # ── Declare Win button (visible when a winning discard exists) ────────────
-    if ss.phase == 'discard' and ss.win_idx_list:
-        has_cc  = bool(win_cc)
-        best_i  = next((i for i, cc in ss.win_idx_list if cc), ss.win_idx_list[0][0])
-        if has_cc:
-            btn_lbl  = "🏅 ¡CHINCHÓN! — Declare Win"
-            btn_help = "Discard the highlighted card to claim Chinchón and win the game!"
-        else:
-            btn_lbl  = "✋ Declare Win — Stop the Game"
-            btn_help = "Discard the highlighted card and declare your winning hand."
-        _, mid_col, _ = st.columns([1, 2, 1])
-        with mid_col:
-            if st.button(btn_lbl, key="btn_declare_win",
-                         use_container_width=True, type="primary",
-                         help=btn_help):
-                do_discard(best_i)
-
     # ── Meld highlight for game-over ──────────────────────────────────────────
     meld_ids = set()
     if ss.phase == 'game_over' and ss.game_result in ('player_wins','player_cc') and ss.melds:
@@ -781,14 +962,20 @@ elif ss.phase in ('draw', 'discard', 'game_over'):
 
         is_player_win = ss.game_result in ('player_wins', 'player_cc')
         is_chinchon_end = ss.game_result in ('player_cc', 'comp_cc')
-        color  = "#fbbf24" if is_chinchon_end else                  "#86efac" if is_player_win else "#fca5a5"
-        emoji  = "🏅" if is_chinchon_end else                  "🎉" if is_player_win else "😔"
+        is_declare = ss.game_result == 'player_declare'
+        color  = ('#fbbf24' if is_chinchon_end else
+                  '#fb923c' if is_declare else
+                  '#86efac' if is_player_win else '#fca5a5')
+        emoji  = ('🏅' if is_chinchon_end else
+                  '🗒️' if is_declare else
+                  '🎉' if is_player_win else '😔')
         result_label = {
-            'player_cc':   "¡CHINCHÓN! You win the game!",
-            'player_wins': "You stopped — you win this hand!",
-            'comp_cc':     "Computer Chinchón — game over!",
-            'comp_wins':   "Computer stopped — you lose this hand!",
-        }.get(ss.game_result, "Round over")
+            'player_cc':      '\u00a1CHINCH\u00d3N! You win the game!',
+            'player_wins':    'You stopped — you win this hand!',
+            'comp_cc':        'Computer Chinch\u00f3n — game over!',
+            'comp_wins':      'Computer stopped — you lose this hand!',
+            'player_declare': 'Declared — both hands scored.',
+        }.get(ss.game_result, 'Round over')
 
         # Determine who is the loser of THIS hand for penalty display
         def _score_col(pts):
@@ -800,7 +987,9 @@ elif ss.phase in ('draw', 'discard', 'game_over'):
         pen_c = ss.get('hand_penalty_computer', 0) or 0
         pen_line = ""
         if not is_chinchon_end:
-            if is_player_win:
+            if is_declare:
+                pen_line = (f'You +{pen_p} pts &nbsp;&middot;&nbsp; CPU +{pen_c} pts')
+            elif is_player_win:
                 pen_line = (f'Computer pays <b style="color:#fca5a5;">+{pen_c} pts</b>')
             else:
                 pen_line = (f'You pay <b style="color:#fca5a5;">+{pen_p} pts</b>')
@@ -844,18 +1033,18 @@ elif ss.phase in ('draw', 'discard', 'game_over'):
         unmatched_p = ss.get('hand_unmatched_player',   [])
         unmatched_c = ss.get('hand_unmatched_computer', [])
 
-        if not is_player_win and unmatched_p and not is_chinchon_end:
+        if (not is_player_win or is_declare) and unmatched_p and not is_chinchon_end:
             st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
             st.markdown(
-                f'<div class="sec-lbl">Your unmatched cards &nbsp;·&nbsp; ' +
+                f'<div class="sec-lbl">Your unmatched cards &nbsp;&middot;&nbsp; '
                 f'+{pen_p} penalty points</div>',
                 unsafe_allow_html=True)
             st.markdown(hand_html_row(unmatched_p, gap=4), unsafe_allow_html=True)
 
-        if is_player_win and unmatched_c and not is_chinchon_end:
+        if (is_player_win or is_declare) and unmatched_c and not is_chinchon_end:
             st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
             st.markdown(
-                f'<div class="sec-lbl">Computer unmatched cards &nbsp;&middot;&nbsp; ' +
+                f'<div class="sec-lbl">Computer unmatched cards &nbsp;&middot;&nbsp; '
                 f'+{pen_c} penalty points</div>',
                 unsafe_allow_html=True)
             st.markdown(hand_html_row(unmatched_c, gap=4), unsafe_allow_html=True)
