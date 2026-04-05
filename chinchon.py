@@ -511,11 +511,13 @@ def _run_computer_turn():
         else:
             pen, unmatched       = deadwood(ss.player_hand)
             ss.player_score     += pen
+            ss.computer_score    = max(0, ss.computer_score - 10)
             ss.hand_penalty_player   = pen
             ss.hand_unmatched_player = unmatched
+            ss.hand_penalty_computer = -10   # winner bonus
             ss.game_result    = 'comp_wins'
             ss.computer_msg  += " \u00b7 \u270b Computer stops!"
-            ss.message = f"\U0001f614 Computer stopped. You pay {pen} penalty points."
+            ss.message = f"\U0001f614 Computer stopped · You pay {pen} pts · CPU gets \u221210 bonus."
     else:
         ss.message = "Your turn \u2014 draw a card."
 
@@ -542,10 +544,12 @@ def do_discard(idx: int):
         else:
             pen, unmatched         = deadwood(ss.computer_hand)
             ss.computer_score     += pen
+            ss.player_score        = max(0, ss.player_score - 10)
             ss.hand_penalty_computer   = pen
             ss.hand_unmatched_computer = unmatched
+            ss.hand_penalty_player = -10   # winner bonus
             ss.game_result   = 'player_wins'
-            ss.message = f"\u270b You stopped! Computer pays {pen} penalty points."
+            ss.message = f"\u270b You stopped! Computer pays {pen} pts · You get \u221210 bonus."
     else:
         ss.player_hand  = remaining; ss.phase = 'draw'
         ss.drawn_idx    = None; ss.win_idx_list = []
@@ -596,10 +600,12 @@ def end_hand_with_scoring():
         else:
             pen, unmatched         = deadwood(ss.computer_hand)
             ss.computer_score     += pen
+            ss.player_score        = max(0, ss.player_score - 10)
             ss.hand_penalty_computer   = pen
             ss.hand_unmatched_computer = unmatched
+            ss.hand_penalty_player = -10
             ss.game_result   = 'player_wins'
-            ss.message = f"\u270b You stopped! Computer pays {pen} penalty points."
+            ss.message = f"\u270b You stopped! Computer pays {pen} pts · You get \u221210 bonus."
     else:
         # Incomplete hand — score both sides
         p_pen, p_unmatched = deadwood(hand7)
@@ -778,11 +784,10 @@ elif ss.phase in ('draw', 'discard', 'game_over'):
     # ── Computer hand ─────────────────────────────────────────────────────────
     st.markdown('<div class="sec-lbl">🤖 Computer\'s hand</div>', unsafe_allow_html=True)
 
-    show_comp_face_up = (ss.phase == 'game_over' and
-                         ss.game_result in ('comp_wins', 'comp_cc'))
+    show_comp_face_up = (ss.phase == 'game_over')
 
     if show_comp_face_up:
-        # Reveal computer's winning hand
+        # Reveal computer's hand at end of every hand
         st.markdown(hand_html_row(ss.computer_hand, facedown=False),
                     unsafe_allow_html=True)
     else:
@@ -990,9 +995,11 @@ elif ss.phase in ('draw', 'discard', 'game_over'):
             if is_declare:
                 pen_line = (f'You +{pen_p} pts &nbsp;&middot;&nbsp; CPU +{pen_c} pts')
             elif is_player_win:
-                pen_line = (f'Computer pays <b style="color:#fca5a5;">+{pen_c} pts</b>')
+                pen_line = (f'Computer +{pen_c} pts &nbsp;&middot;&nbsp; '
+                            f'<b style="color:#86efac;">You \u221210 bonus</b>')
             else:
-                pen_line = (f'You pay <b style="color:#fca5a5;">+{pen_p} pts</b>')
+                pen_line = (f'You +{pen_p} pts &nbsp;&middot;&nbsp; '
+                            f'<b style="color:#86efac;">CPU \u221210 bonus</b>')
 
         st.markdown(
             f'<div style="text-align:center;padding:18px;margin:10px 0;'
