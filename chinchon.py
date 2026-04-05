@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-#  🃏  Chinchón — Spanish Card Game  (c) Dr. Jorge Colazo
+#  🃏  Chinchón — Spanish Card Game  (BAT 3301 · Colazo)
 #  Player vs Computer · Baraja Española · 40 cards
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -180,6 +180,8 @@ def winning_discards(hand8):
     where discarding that card produces a winning 7-card hand.
     """
     result = []
+    if len(hand8) != 8:
+        return result
     for i in range(8):
         rem = [hand8[j] for j in range(8) if j != i]
         can, cc, _ = find_win(rem)
@@ -446,6 +448,12 @@ with h3:
             f'</div>',
             unsafe_allow_html=True,
         )
+        st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+        if st.button("🔄 Reset Game", key="btn_reset",
+                     use_container_width=True,
+                     help="Discard this game and start a new one from zero"):
+            init_game(reset_scores=True)
+            st.rerun()
 
 st.markdown("<hr class='felt'>", unsafe_allow_html=True)
 
@@ -673,6 +681,23 @@ elif ss.phase in ('draw', 'discard', 'game_over'):
     win_set  = {i for i, _ in ss.win_idx_list}
     win_cc   = {i for i, cc in ss.win_idx_list if cc}
 
+    # ── Declare Win button (visible when a winning discard exists) ────────────
+    if ss.phase == 'discard' and ss.win_idx_list:
+        has_cc  = bool(win_cc)
+        best_i  = next((i for i, cc in ss.win_idx_list if cc), ss.win_idx_list[0][0])
+        if has_cc:
+            btn_lbl  = "🏅 ¡CHINCHÓN! — Declare Win"
+            btn_help = "Discard the highlighted card to claim Chinchón and win the game!"
+        else:
+            btn_lbl  = "✋ Declare Win — Stop the Game"
+            btn_help = "Discard the highlighted card and declare your winning hand."
+        _, mid_col, _ = st.columns([1, 2, 1])
+        with mid_col:
+            if st.button(btn_lbl, key="btn_declare_win",
+                         use_container_width=True, type="primary",
+                         help=btn_help):
+                do_discard(best_i)
+
     # ── Meld highlight for game-over ──────────────────────────────────────────
     meld_ids = set()
     if ss.phase == 'game_over' and ss.game_result in ('player_wins','player_cc') and ss.melds:
@@ -697,6 +722,7 @@ elif ss.phase in ('draw', 'discard', 'game_over'):
         for i in range(n_cards):
             with swap_cols[i]:
                 btn_row = st.columns(2)
+
                 # ← move left
                 with btn_row[0]:
                     if i > 0:
@@ -704,15 +730,18 @@ elif ss.phase in ('draw', 'discard', 'game_over'):
                                      use_container_width=True, help="Move left"):
                             drawn_id = (ss.player_hand[ss.drawn_idx]['id']
                                         if ss.drawn_idx is not None else None)
-                            ss.player_hand[i], ss.player_hand[i-1] = (
-                                ss.player_hand[i-1], ss.player_hand[i])
+                            # Build a new list — never mutate session state in place
+                            new_hand = list(ss.player_hand)
+                            new_hand[i], new_hand[i-1] = new_hand[i-1], new_hand[i]
+                            ss.player_hand = new_hand
                             if drawn_id is not None:
                                 ss.drawn_idx = next(
                                     (j for j, c in enumerate(ss.player_hand)
                                      if c['id'] == drawn_id), None)
-                            if ss.phase == 'discard':
+                            if ss.phase == 'discard' and len(ss.player_hand) == 8:
                                 ss.win_idx_list = winning_discards(ss.player_hand)
                             st.rerun()
+
                 # → move right
                 with btn_row[1]:
                     if i < n_cards - 1:
@@ -720,13 +749,14 @@ elif ss.phase in ('draw', 'discard', 'game_over'):
                                      use_container_width=True, help="Move right"):
                             drawn_id = (ss.player_hand[ss.drawn_idx]['id']
                                         if ss.drawn_idx is not None else None)
-                            ss.player_hand[i], ss.player_hand[i+1] = (
-                                ss.player_hand[i+1], ss.player_hand[i])
+                            new_hand = list(ss.player_hand)
+                            new_hand[i], new_hand[i+1] = new_hand[i+1], new_hand[i]
+                            ss.player_hand = new_hand
                             if drawn_id is not None:
                                 ss.drawn_idx = next(
                                     (j for j, c in enumerate(ss.player_hand)
                                      if c['id'] == drawn_id), None)
-                            if ss.phase == 'discard':
+                            if ss.phase == 'discard' and len(ss.player_hand) == 8:
                                 ss.win_idx_list = winning_discards(ss.player_hand)
                             st.rerun()
 
